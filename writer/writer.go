@@ -113,6 +113,8 @@ func (pw *ParquetWriter) SetSchemaHandlerFromJSON(jsonSchema string) error {
 
 //Rename schema name to exname in tags
 func (pw *ParquetWriter) RenameSchema() {
+	log.Println("Internal RenameSchema entered")
+	log.Printf("Footer Schema length: %v\n", pw.Footer.Schema)
 	for i := 0; i < len(pw.Footer.Schema); i++ {
 		pw.Footer.Schema[i].Name = pw.SchemaHandler.Infos[i].ExName
 	}
@@ -124,6 +126,7 @@ func (pw *ParquetWriter) RenameSchema() {
 			chunk.MetaData.PathInSchema = exPath
 		}
 	}
+	log.Println("Internal RenameSchema exited")
 }
 
 //Write the footer and stop writing
@@ -131,11 +134,15 @@ func (pw *ParquetWriter) WriteStop() error {
 	log.Println("Internal WriteStop entered")
 	var err error
 
+	log.Println("Flushing")
 	if err = pw.Flush(true); err != nil {
 		return err
 	}
+	log.Println("Creating new serializer")
 	ts := thrift.NewTSerializer()
+	log.Println("Init protocol")
 	ts.Protocol = thrift.NewTCompactProtocolFactory().GetProtocol(ts.Transport)
+	log.Println("Renaming schema")
 	pw.RenameSchema()
 	log.Println("Writing ColumnIndex")
 
