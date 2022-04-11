@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"reflect"
 	"sync"
 
@@ -127,6 +128,7 @@ func (pw *ParquetWriter) RenameSchema() {
 
 //Write the footer and stop writing
 func (pw *ParquetWriter) WriteStop() error {
+	log.Println("Internal WriteStop entered")
 	var err error
 
 	if err = pw.Flush(true); err != nil {
@@ -135,6 +137,7 @@ func (pw *ParquetWriter) WriteStop() error {
 	ts := thrift.NewTSerializer()
 	ts.Protocol = thrift.NewTCompactProtocolFactory().GetProtocol(ts.Transport)
 	pw.RenameSchema()
+	log.Println("Writing ColumnIndex")
 
 	// write ColumnIndex
 	idx := 0
@@ -152,13 +155,16 @@ func (pw *ParquetWriter) WriteStop() error {
 
 			pos := pw.Offset
 			columnChunk.ColumnIndexOffset = &pos
+			log.Println("Casting columnIndexBufSize")
 			columnIndexBufSize := int32(len(columnIndexBuf))
+			log.Printf("columnIndexBufSize casted to int: %v\n", columnIndexBufSize)
 			columnChunk.ColumnIndexLength = &columnIndexBufSize
 
 			pw.Offset += int64(columnIndexBufSize)
 		}
 	}
 
+	log.Println("Writing OffsetIndex")
 	// write OffsetIndex
 	idx = 0
 	for _, rowGroup := range pw.Footer.RowGroups {
@@ -175,7 +181,9 @@ func (pw *ParquetWriter) WriteStop() error {
 
 			pos := pw.Offset
 			columnChunk.OffsetIndexOffset = &pos
+			log.Println("Casting offsetIndexBufSize")
 			offsetIndexBufSize := int32(len(offsetIndexBuf))
+			log.Printf("offsetIndexBufSize casted to int: %v\n", offsetIndexBufSize)
 			columnChunk.OffsetIndexLength = &offsetIndexBufSize
 
 			pw.Offset += int64(offsetIndexBufSize)
@@ -191,7 +199,9 @@ func (pw *ParquetWriter) WriteStop() error {
 		return err
 	}
 	footerSizeBuf := make([]byte, 4)
+	log.Println("Casing footerBuf")
 	binary.LittleEndian.PutUint32(footerSizeBuf, uint32(len(footerBuf)))
+	log.Printf("footerBuf casted to %v\n", uint32(len(footerBuf)))
 
 	if _, err = pw.PFile.Write(footerSizeBuf); err != nil {
 		return err
@@ -199,6 +209,7 @@ func (pw *ParquetWriter) WriteStop() error {
 	if _, err = pw.PFile.Write([]byte("PAR1")); err != nil {
 		return err
 	}
+	log.Println("Internal WriteStop finished")
 	return nil
 
 }
