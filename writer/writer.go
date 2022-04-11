@@ -114,7 +114,7 @@ func (pw *ParquetWriter) SetSchemaHandlerFromJSON(jsonSchema string) error {
 //Rename schema name to exname in tags
 func (pw *ParquetWriter) RenameSchema() {
 	log.Println("Internal RenameSchema entered")
-	log.Printf("Footer Schema length: %v\n", pw.Footer.Schema)
+	log.Printf("Footer Schema length: %v\n", len(pw.Footer.Schema))
 	for i := 0; i < len(pw.Footer.Schema); i++ {
 		pw.Footer.Schema[i].Name = pw.SchemaHandler.Infos[i].ExName
 	}
@@ -252,21 +252,26 @@ func (pw *ParquetWriter) Write(src interface{}) error {
 }
 
 func (pw *ParquetWriter) flushObjs() error {
+	log.Println("Internal flushObjs entered")
 	var err error
+	log.Printf("Counting pw.Objs = %v\n", len(pw.Objs))
 	l := int64(len(pw.Objs))
 	if l <= 0 {
 		return nil
 	}
+	log.Println("Making pagesMapList map")
 	pagesMapList := make([]map[string][]*layout.Page, pw.NP)
 	for i := 0; i < int(pw.NP); i++ {
 		pagesMapList[i] = make(map[string][]*layout.Page)
 	}
 
+	log.Println("Assigning flushObjs constants")
 	var c int64 = 0
 	delta := (l + pw.NP - 1) / pw.NP
 	lock := new(sync.Mutex)
 	var wg sync.WaitGroup
 	var errs []error = make([]error, pw.NP)
+	log.Println("Beginning NP iteration")
 
 	for c = 0; c < pw.NP; c++ {
 		bgn := c * delta
@@ -331,6 +336,7 @@ func (pw *ParquetWriter) flushObjs() error {
 
 	wg.Wait()
 
+	log.Println("NP iteration finished")
 	for _, err2 := range errs {
 		if err2 != nil {
 			err = err2
@@ -338,6 +344,7 @@ func (pw *ParquetWriter) flushObjs() error {
 		}
 	}
 
+	log.Println("Iterating pagesMapList")
 	for _, pagesMap := range pagesMapList {
 		for name, pages := range pagesMap {
 			if _, ok := pw.PagesMapBuf[name]; !ok {
@@ -352,21 +359,28 @@ func (pw *ParquetWriter) flushObjs() error {
 		}
 	}
 
+	log.Println("Getting length of pw.Objs")
 	pw.NumRows += int64(len(pw.Objs))
+	print("Finished internal flushObjs")
 	return err
 }
 
 //Flush the write buffer to parquet file
 func (pw *ParquetWriter) Flush(flag bool) error {
+	log.Println("Internal Flush entered")
 	var err error
 
+	log.Println("Calling flushObjs")
 	if err = pw.flushObjs(); err != nil {
 		return err
 	}
 
+	log.Println("Entering Flush body")
 	if (pw.Size+pw.ObjsSize >= pw.RowGroupSize || flag) && len(pw.PagesMapBuf) > 0 {
 		//pages -> chunk
+		log.Println("Making chunk map")
 		chunkMap := make(map[string]*layout.Chunk)
+		log.Println("Iterating PagesMapBuf")
 		for name, pages := range pw.PagesMapBuf {
 			if len(pages) > 0 && (pages[0].Info.Encoding == parquet.Encoding_PLAIN_DICTIONARY || pages[0].Info.Encoding == parquet.Encoding_RLE_DICTIONARY) {
 				dictPage, _ := layout.DictRecToDictPage(pw.DictRecs[name], int32(pw.PageSize), pw.CompressionType)
@@ -378,12 +392,17 @@ func (pw *ParquetWriter) Flush(flag bool) error {
 			}
 		}
 
+		log.Println("Creating DictRecs map")
 		pw.DictRecs = make(map[string]*layout.DictRecType) //clean records for next chunks
 
 		//chunks -> rowGroup
+		log.Println("Creating NewRowGroup object")
 		rowGroup := layout.NewRowGroup()
+		log.Println("Assigning RowGroupHeader")
 		rowGroup.RowGroupHeader.Columns = make([]*parquet.ColumnChunk, 0)
 
+		log.Println("Iterating SchemaElements")
+		log.Printf("There are %v SchemaElements\n", len(pw.SchemaHandler.SchemaElements))
 		for k := 0; k < len(pw.SchemaHandler.SchemaElements); k++ {
 			//for _, chunk := range chunkMap {
 			schema := pw.SchemaHandler.SchemaElements[k]
@@ -399,9 +418,11 @@ func (pw *ParquetWriter) Flush(flag bool) error {
 			rowGroup.RowGroupHeader.TotalByteSize += chunk.ChunkHeader.MetaData.TotalUncompressedSize
 			rowGroup.RowGroupHeader.Columns = append(rowGroup.RowGroupHeader.Columns, chunk.ChunkHeader)
 		}
+		log.Println("Setting NumRows")
 		rowGroup.RowGroupHeader.NumRows = pw.NumRows
 		pw.NumRows = 0
 
+		log.Println("Iterating rowGroup.Chunks")
 		for k := 0; k < len(rowGroup.Chunks); k++ {
 			rowGroup.Chunks[k].ChunkHeader.MetaData.DataPageOffset = -1
 			rowGroup.Chunks[k].ChunkHeader.FileOffset = pw.Offset
@@ -471,13 +492,17 @@ func (pw *ParquetWriter) Flush(flag bool) error {
 			}
 		}
 
+		log.Println("Setting RowGroups, Size and PagesMapBuf")
 		pw.Footer.RowGroups = append(pw.Footer.RowGroups, rowGroup.RowGroupHeader)
 		pw.Size = 0
 		pw.PagesMapBuf = make(map[string][]*layout.Page)
 	}
+
+	log.Println("Setting final Flush attributes")
 	pw.Footer.NumRows += int64(len(pw.Objs))
 	pw.Objs = pw.Objs[:0]
 	pw.ObjsSize = 0
+	log.Println("Finished Flush")
 	return nil
 
 }
